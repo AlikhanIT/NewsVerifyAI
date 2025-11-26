@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8" />
+    <title>NewsVerifyAI</title>
+    <style>
+        body { font-family: Arial, sans-serif; padding: 30px; max-width: 700px; margin: auto; }
+        input, select, textarea, button { width: 100%; padding: 10px; margin: 10px 0; }
+        button { cursor: pointer; background: #007bff; color: white; border: none; }
+        button:hover { background: #0056b3; }
+        pre { background: #f4f4f4; padding: 10px; white-space: pre-wrap; }
+    </style>
+</head>
+<body>
+    <h1>🔍 NewsVerifyAI</h1>
+    <p>Проверь утверждение:</p>
+
+    <textarea id="claim" rows="4" placeholder="Например: Компания X объявила запуск продукта Y завтра..."></textarea>
+
+    <label for="style">Стиль ответа:</label>
+    <select id="style">
+        <option value="simple">Упрощенный</option>
+        <option value="formal">Формальный</option>
+    </select>
+
+    <button onclick="sendRequest()">Проверить</button>
+
+    <h2>📌 Результат:</h2>
+    <pre id="result">Введите утверждение и нажмите "Проверить"</pre>
+
+    <script>
+        async function sendRequest() {
+            const text = document.getElementById('claim').value.trim();
+            const style = document.getElementById('style').value;
+
+            if (!text) {
+                alert('Введите утверждение!');
+                return;
+            }
+
+            document.getElementById('result').innerText = '⏳ Проверяем...';
+
+            try {
+                const response = await fetch('/check', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, style })
+                });
+
+                if (!response.ok) throw new Error('Ошибка: ' + response.status);
+
+                const data = await response.json();
+                document.getElementById('result').innerText =
+                    JSON.stringify(data, null, 2);
+            } catch (err) {
+                document.getElementById('result').innerText = '❌ ' + err.message;
+            }
+        }
+    </script>
+</body>
+</html>
