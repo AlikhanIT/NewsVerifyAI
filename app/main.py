@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+from datetime import datetime
+
 from fastapi import FastAPI, Depends, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.templating import Jinja2Templates
@@ -11,6 +14,15 @@ from .models import CachedResult
 from .schemas import CheckRequest, CheckResponse
 from .services.verifier import verify_claim
 from sqlalchemy.orm import Session
+
+# Configure logging with custom format if not already configured
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s | %(levelname)s | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+logger = logging.getLogger(__name__)
 
 # Создаём таблицы
 Base.metadata.create_all(bind=engine)
@@ -48,9 +60,17 @@ async def check_claim(
     payload: CheckRequest,
     db: Session = Depends(get_db),
 ):
+    logger.info("=" * 80)
+    logger.info("🎯 НОВЫЙ ЗАПРОС НА /check")
+    logger.info("📝 Тело запроса:")
+    logger.info(f"   - Текст: {payload.text}")
+    logger.info(f"   - Стиль: {payload.style}")
+    logger.info(f"   - Время: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
+    
     if not payload.text or len(payload.text.strip()) < 5:
         raise HTTPException(status_code=400, detail="Текст утверждения слишком короткий.")
-
+    
+    logger.info("🔄 Начинаем проверку утверждения...")
     resp = await verify_claim(db=db, payload=payload)
     return resp
 
