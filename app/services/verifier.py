@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 from typing import Tuple
 
 from sqlalchemy.orm import Session
@@ -11,6 +12,9 @@ from ..models import CachedResult
 from .nlp import extract_entities, extract_ngrams
 from .news_client import NewsClient
 from .llm_client import LLMClient
+
+# Configure logger
+logger = logging.getLogger(__name__)
 
 
 def _hash_claim(text: str, style: str) -> str:
@@ -86,6 +90,8 @@ async def verify_claim(
     news_client = news_client or NewsClient()
     llm_client = llm_client or LLMClient()
 
+    logger.info("🔍 НАЧАЛО ПРОВЕРКИ УТВЕРЖДЕНИЯ")
+    
     claim = payload.text.strip()
     style = payload.style
 
