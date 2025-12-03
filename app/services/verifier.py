@@ -13,7 +13,7 @@ from .nlp import extract_entities, extract_ngrams
 from .news_client import NewsClient
 from .llm_client import LLMClient
 
-# Configure logger
+# Create logger instance
 logger = logging.getLogger(__name__)
 
 

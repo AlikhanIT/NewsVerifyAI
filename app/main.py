@@ -15,12 +15,13 @@ from .schemas import CheckRequest, CheckResponse
 from .services.verifier import verify_claim
 from sqlalchemy.orm import Session
 
-# Configure logging with custom format
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s | %(levelname)s | %(message)s',
-    datefmt='%Y-%m-%d %H:%M:%S'
-)
+# Configure logging with custom format if not already configured
+if not logging.getLogger().handlers:
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s | %(levelname)s | %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
 logger = logging.getLogger(__name__)
 
 # Создаём таблицы
