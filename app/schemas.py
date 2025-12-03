@@ -1,5 +1,5 @@
 from pydantic import BaseModel, Field
-from typing import Literal, List, Optional
+from typing import Literal, List
 from datetime import datetime
 
 
@@ -11,7 +11,8 @@ class CheckRequest(BaseModel):
 class NewsSource(BaseModel):
     title: str
     description: str | None = None
-    url: str
+    summary: str | None = None
+    url: str | None = None
     published_at: datetime | None = None
     source_name: str | None = None
 
@@ -22,7 +23,7 @@ class ClaimAnalysis(BaseModel):
         None, ge=0.0, le=1.0, description="Оценка вероятности события"
     )
     explanation: str
-    matched_sources: List[NewsSource] = []
+    matched_sources: List[NewsSource] = Field(default_factory=list)
 
 
 class CheckResponse(BaseModel):
