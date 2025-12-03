@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import json
 import logging
+import re
 from typing import Optional, Tuple
 
 import httpx
@@ -9,6 +11,16 @@ from ..config import settings
 
 
 logger = logging.getLogger(__name__)
+
+_JSON_PATTERN = re.compile(r"\{.*\}", re.DOTALL)
+MAX_LOG_LEN = 1000
+
+SYSTEM_PROMPT = (
+    "Ты — ведущий аналитик по проверке фактов. Отвечай ТОЛЬКО корректным JSON вида "
+    '{"probability": <float 0..1>, "explanation": "подробное русское объяснение"}. '
+    "probability — вероятность истинности утверж��ения (0..1). "
+    "explanation — 3-4 насыщенных предложения на русском языке, где ты кратко описываешь контекст, логические аргументы, упоминаешь найденные или отсутствующие источники."
+)
 
 
 class LLMClient:
@@ -44,14 +56,21 @@ class LLMClient:
         logger.info(f"      {prompt[:200]}{'...' if len(prompt) > 200 else ''}")
 
         try:
+            user_prompt = (
+                "Проанализируй утверждение и контекст ниже. "
+                "Определи вероятность истинности (0..1) и сформулируй развёрнутое объяснение на русском языке, "
+                "которое отражает основные аргументы, найденные источники или их отсутствие.\n\n"
+                f"{prompt}"
+            )
+
             request_payload = {
                 "model": self.model,
                 "messages": [
-                    {"role": "system", "content": "You are a fact-checker."},
-                    {"role": "user", "content": prompt},
+                    {"role": "system", "content": SYSTEM_PROMPT},
+                    {"role": "user", "content": user_prompt},
                 ],
-                "temperature": 0.3,
-                "max_tokens": 500,
+                "temperature": 0.2,
+                "max_tokens": 600,
             }
 
             async with httpx.AsyncClient(timeout=self.timeout) as client:
@@ -88,20 +107,50 @@ class LLMClient:
                 logger.info(f"      ✅ Ответ получен (finish_reason: {finish_reason})")
                 logger.info(f"      💡 Ответ (первые 200 символов):")
                 logger.info(f"         {content[:200]}{'...' if len(content) > 200 else ''}")
+                logger.info(f"      🧾 Полный ответ (до {MAX_LOG_LEN} символов): {content[:MAX_LOG_LEN]}")
 
-                # Простая попытка извлечь вероятность из текста
-                prob = 0.5
-                if "probability" in content.lower():
-                    for line in content.splitlines():
-                        if "probability" in line.lower() and ":" in line:
-                            try:
-                                prob = float(line.split(":")[-1].strip())
-                                logger.info(f"      🎯 Извлечена вероятность: {prob}")
-                                break
-                            except:
-                                pass
+                parsed = self._parse_llm_response(content)
+                if parsed is None:
+                    logger.warning(
+                        "      ⚠️ Не удалось разобрать JSON LLM, используем эвристику. Сырой ответ: %s",
+                        content[:MAX_LOG_LEN],
+                    )
+                    return 0.3, "AI-анализ вернул ответ, который не удалось разобрать."
 
-                return prob, content
+                prob, explanation = parsed
+                logger.info(f"      🎯 Извлечена вероятность: {prob}")
+                return prob, explanation
         except Exception as e:
             logger.error(f"   ❌ Ошибка запроса к OpenAI API: {e}")
-            return None
+            return 0.3, f"AI-анализ временно недоступен: {e}"
+
+    def _parse_llm_response(self, content: str) -> Optional[Tuple[float, str]]:
+        try:
+            json_candidate = json.loads(content)
+        except json.JSONDecodeError as exc:
+            logger.debug("LLM JSON decode error (primary): %s | raw=%s", exc, content[:MAX_LOG_LEN])
+            match = _JSON_PATTERN.search(content)
+            if not match:
+                logger.debug("LLM JSON regex search не нашёл подходящего блока")
+                return None
+            try:
+                json_candidate = json.loads(match.group())
+            except json.JSONDecodeError as exc:
+                logger.debug("LLM JSON decode error (regex match): %s | raw=%s", exc, match.group()[:MAX_LOG_LEN])
+                return None
+
+        probability = json_candidate.get("probability")
+        explanation = json_candidate.get("explanation")
+
+        try:
+            probability = float(probability)
+        except (TypeError, ValueError):
+            logger.debug("LLM probability не float: %s (подставляем 0.5)", probability)
+            probability = 0.5
+
+        probability = max(0.0, min(1.0, probability))
+        if not explanation:
+            logger.debug("LLM explanation отсутствует, используем заглушку")
+            explanation = "LLM вернул пустое объяснение."
+
+        return probability, str(explanation)
