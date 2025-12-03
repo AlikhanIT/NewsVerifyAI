@@ -9,6 +9,7 @@ from dateutil.parser import parse as parse_date
 
 from ..config import settings
 from ..schemas import NewsSource
+from .llm_client import LLMClient
 
 
 logger = logging.getLogger(__name__)
@@ -26,18 +27,24 @@ class NewsClient:
         logger.info("📰 NewsClient init:")
         logger.info(f"   API Base: {self.api_base}")
         logger.info(f"   API Key present: {bool(self.api_key)}")
+        self.llm_client = LLMClient()
 
     async def search(self, query: str, from_days: int = 7, limit: int = 5) -> List[NewsSource]:
         if not self.api_key:
             logger.error("❌ NEWSAPI_KEY not set")
             return []
 
+        generalized_query = await self.llm_client.generalize_query(query)
+        logger.info("🧠 Поисковый запрос подготовлен:")
+        logger.info("   🔍 Оригинал: %s", query)
+        logger.info("   🌐 Обобщённый: %s", generalized_query)
+
         from_date = (datetime.now() - timedelta(days=from_days)).strftime("%Y-%m-%d")
 
         logger.info("📰 NEWS API ЗАПРОС:")
         logger.info(f"   🔗 URL: {self.api_base}/everything")
         logger.info(f"   📋 Параметры:")
-        logger.info(f"      - query: {query}")
+        logger.info(f"      - query: {generalized_query}")
         logger.info(f"      - from: {from_date}")
         logger.info(f"      - sortBy: relevancy")
         logger.info(f"      - pageSize: {limit}")
@@ -48,7 +55,7 @@ class NewsClient:
                 resp = await client.get(
                     f"{self.api_base}/everything",
                     params={
-                        "q": query,
+                        "q": generalized_query,
                         "from": from_date,
                         "sortBy": "relevancy",
                         "pageSize": limit,

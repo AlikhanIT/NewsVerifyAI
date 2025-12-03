@@ -18,7 +18,7 @@ MAX_LOG_LEN = 1000
 SYSTEM_PROMPT = (
     "Ты — ведущий аналитик по проверке фактов. Отвечай ТОЛЬКО корректным JSON вида "
     '{"probability": <float 0..1>, "explanation": "подробное русское объяснение"}. '
-    "probability — вероятность истинности утверж��ения (0..1). "
+    "probability — вероятность истинности утверждения (0..1). "
     "explanation — 3-4 насыщенных предложения на русском языке, где ты кратко описываешь контекст, логические аргументы, упоминаешь найденные или отсутствующие источники."
 )
 
@@ -36,6 +36,76 @@ class LLMClient:
         print(f"   API Base: {self.api_base}")
         print(f"   Model: {self.model}")
         print(f"   API Key present: {bool(self.api_key)}")
+
+    async def generalize_query(self, query: str, max_length: int = 220) -> str:
+        """Возвращает расширенный/обобщённый запрос для News API либо исходную строку при сбоях."""
+        normalized = (query or "").strip()
+        if not normalized:
+            return query
+        if not self.api_key:
+            logger.error("❌ OPENAI_API_KEY not set (generalize_query)")
+            return query
+
+        logger.info("🤖 LLM обобщение запроса: %s", normalized[:200])
+        prompt = (
+            "Преобразуй пользовательский запрос к новостям в набор ключевых слов. "
+            "Сохрани суть, добавь синонимы, связанные темы и официальные названия. "
+            "Ответь одной строкой, перечислив только ключевые слова через запятую (без текста до/после).\n"
+            f"Запрос: {normalized}"
+        )
+
+        try:
+            async with httpx.AsyncClient(timeout=self.timeout) as client:
+                resp = await client.post(
+                    f"{self.api_base}/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {self.api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": self.model,
+                        "messages": [
+                            {
+                                "role": "system",
+                                "content": "Ты помощник редактора новостей. Предлагай только ключевые слова, перечисленные через запятую без комментариев.",
+                            },
+                            {"role": "user", "content": prompt},
+                        ],
+                        "temperature": 0.4,
+                        "max_tokens": 120,
+                    },
+                )
+
+                logger.info(
+                    "   📡 Ответ LLM (generalize_query): статус %s, %.2fs",
+                    resp.status_code,
+                    resp.elapsed.total_seconds(),
+                )
+
+                if resp.status_code != 200:
+                    logger.error("   ❌ Ошибка LLM generalize: %s", resp.text[:300])
+                    return query
+
+                data = resp.json()
+                content = data.get("choices", [{}])[0].get("message", {}).get("content", "")
+                generalized = content.strip().replace("\n", " ")[:max_length]
+                if not generalized:
+                    logger.warning("   ⚠️ LLM вернул пустой обобщённый запрос, используем исходный")
+                    return query
+
+                raw_keywords = generalized.replace(";", ",").split(",")
+                keywords = [kw.strip(" \"'\t") for kw in raw_keywords if kw.strip(" \"'\t")]
+                if not keywords:
+                    logger.warning("   ⚠️ Не удалось выделить ключевые слова, используем исходный запрос")
+                    return query
+
+                deduped_keywords = list(dict.fromkeys(keywords))
+                keyword_query = " OR ".join(deduped_keywords)
+                logger.info("   ✅ Ключевые слова: %s", deduped_keywords)
+                return keyword_query
+        except Exception as exc:
+            logger.error("   ❌ generalize_query exception: %s", exc)
+            return query
 
     async def analyze(self, prompt: str) -> Optional[Tuple[float, str]]:
         """

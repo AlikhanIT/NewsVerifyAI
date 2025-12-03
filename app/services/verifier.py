@@ -47,7 +47,7 @@ def _is_cache_entry_modern(data: dict) -> bool:
             return False
         if not item.get("title"):
             return False
-        # url может быть пустым у старых записей, но с��руктура должна присутствовать
+        # url может быть пустым у старых записей, но структура должна присутствовать
         if "url" not in item:
             return False
     return True
@@ -235,7 +235,7 @@ async def verify_claim(
         status = "confirmed"
         probability = 0.9
         explanation_base = (
-            f"По найденным новостным публикациям утверждени�� вероятно подтверждается. "
+            f"По найденным новостным публикациям утверждении вероятно подтверждается. "
             f"Найдено совпадений: {len(filtered_news)}."
         )
         news_payload = filtered_news[:5]
